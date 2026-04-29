@@ -7,7 +7,7 @@ export const LANGUAGES: { code: Lang; label: string; flag: string }[] = [
 
 export const dict = {
   de: {
-    "app.title": "Belron — Carla DE Voicebot Dashboard",
+    "app.title": "Belron — Remona DE Voicebot Dashboard",
     "app.subtitle": "Voicebot POC Dashboard",
 
     "nav.overview": "Übersicht",
@@ -63,7 +63,7 @@ export const dict = {
     "common.notSet": "—",
 
     "overview.title": "Übersicht",
-    "overview.subtitle": "POC-Scorecard für Carla DE — Live- und Historien-Daten zu allen 4 Use Cases.",
+    "overview.subtitle": "POC-Scorecard für Remona DE — Live- und Historien-Daten zu allen 4 Use Cases.",
     "overview.liveCalls": "Live-Anrufe",
     "overview.byUseCase": "Automation pro Use Case",
 
@@ -203,15 +203,15 @@ export const dict = {
     "agentVersions.col.ces": "Ø CES",
     "agentVersions.col.aht": "Ø AHT",
 
-    "call.button": "Mit Carla sprechen",
+    "call.button": "Mit Remona sprechen",
     "call.ready": "Bereit zum Anrufen",
     "call.connecting": "Verbinde…",
-    "call.speaking": "Carla spricht…",
-    "call.listening": "Carla hört zu…",
+    "call.speaking": "Remona spricht…",
+    "call.listening": "Remona hört zu…",
     "call.start": "Anrufen",
     "call.end": "Auflegen",
     "call.close": "Schließen",
-    "call.intro": "Drücken Sie auf „Anrufen\" und sprechen Sie mit Carla. Mikrofon-Zugriff erforderlich.",
+    "call.intro": "Drücken Sie auf „Anrufen\" und sprechen Sie mit Remona. Mikrofon-Zugriff erforderlich.",
     "call.error": "Verbindung fehlgeschlagen.",
     "call.micError": "Mikrofon-Zugriff abgelehnt oder Verbindung fehlgeschlagen.",
     "call.mute": "Stumm",
@@ -223,7 +223,7 @@ export const dict = {
     "settings.connections": "Verbindungen",
     "settings.dataFlow": "Datenfluss",
     "settings.helpfulLinks": "Hilfreiche Links",
-    "settings.flow.1": "Anrufer ruft an → ElevenLabs Conversational AI Agent „Carla DE\" begrüßt und fragt nach Einwilligung.",
+    "settings.flow.1": "Anrufer ruft an → ElevenLabs Conversational AI Agent „Remona DE\" begrüßt und fragt nach Einwilligung.",
     "settings.flow.2": "Agent fragt Telefonnummer → bestätigt → ruft get_customer_by_phone via n8n.",
     "settings.flow.3": "n8n liest aus Supabase, schreibt Tool-Resultat zurück.",
     "settings.flow.4": "Webhooks conversation.turn, tool_called, tool_result füllen Supabase in Echtzeit.",
@@ -231,7 +231,7 @@ export const dict = {
     "settings.flow.6": "Dashboard liest aus Supabase und zeigt Live + History.",
   },
   en: {
-    "app.title": "Belron — Carla DE Voicebot Dashboard",
+    "app.title": "Belron — Remona DE Voicebot Dashboard",
     "app.subtitle": "Voicebot POC Dashboard",
 
     "nav.overview": "Overview",
@@ -287,7 +287,7 @@ export const dict = {
     "common.notSet": "—",
 
     "overview.title": "Overview",
-    "overview.subtitle": "POC scorecard for Carla DE — live and historical data across all 4 use cases.",
+    "overview.subtitle": "POC scorecard for Remona DE — live and historical data across all 4 use cases.",
     "overview.liveCalls": "Live calls",
     "overview.byUseCase": "Automation by use case",
 
@@ -427,15 +427,15 @@ export const dict = {
     "agentVersions.col.ces": "Avg CES",
     "agentVersions.col.aht": "Avg AHT",
 
-    "call.button": "Talk to Carla",
+    "call.button": "Talk to Remona",
     "call.ready": "Ready to call",
     "call.connecting": "Connecting…",
-    "call.speaking": "Carla is speaking…",
-    "call.listening": "Carla is listening…",
+    "call.speaking": "Remona is speaking…",
+    "call.listening": "Remona is listening…",
     "call.start": "Call",
     "call.end": "Hang up",
     "call.close": "Close",
-    "call.intro": "Click 'Call' and speak with Carla. Microphone access required.",
+    "call.intro": "Click 'Call' and speak with Remona. Microphone access required.",
     "call.error": "Connection failed.",
     "call.micError": "Microphone access denied or connection failed.",
     "call.mute": "Mute",
@@ -447,7 +447,7 @@ export const dict = {
     "settings.connections": "Connections",
     "settings.dataFlow": "Data flow",
     "settings.helpfulLinks": "Helpful links",
-    "settings.flow.1": "Caller dials in → ElevenLabs Conversational AI agent 'Carla DE' greets and asks for consent.",
+    "settings.flow.1": "Caller dials in → ElevenLabs Conversational AI agent 'Remona DE' greets and asks for consent.",
     "settings.flow.2": "Agent asks for the phone number → confirms → calls get_customer_by_phone via n8n.",
     "settings.flow.3": "n8n reads from Supabase and writes the tool result back.",
     "settings.flow.4": "Webhooks conversation.turn, tool_called, tool_result populate Supabase in real time.",

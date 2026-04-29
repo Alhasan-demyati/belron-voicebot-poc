@@ -1,12 +1,12 @@
 # Agent Settings — recommended values for the ElevenLabs UI
 
-These are the values to set in the **Conversational AI → Agent → Settings** panel for the Carla DE PoC agent.
+These are the values to set in the **Conversational AI → Agent → Settings** panel for the Remona DE PoC agent.
 
 ## Identity
 
 | Field | Value |
 |---|---|
-| Agent name | `Carla DE PoC v0.3` |
+| Agent name | `Remona DE PoC v0.3` |
 | Description | `Sprachassistentin von Carglass Deutschland — POC build, 4 Use Cases.` |
 | Primary language | `German (de)` |
 | Fallback language | `English (en)` — only if caller speaks English first |
@@ -58,7 +58,7 @@ These are the values to set in the **Conversational AI → Agent → Settings** 
 Mode: **Greet first, with a fixed greeting**. Paste this into the "Initial message" field:
 
 ```
-Guten Tag, hier ist Carla von Carglass Deutschland. Dürfen wir das Gespräch zu Schulungs- und Qualitätszwecken aufzeichnen?
+Guten Tag, hier ist Remona von Carglass Deutschland. Dürfen wir das Gespräch zu Schulungs- und Qualitätszwecken aufzeichnen?
 ```
 
 (The system prompt covers the consent fork — "Yes" / "No" / "What does that mean?".)

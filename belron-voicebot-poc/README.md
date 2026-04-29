@@ -1,6 +1,6 @@
 # Carglass Germany Voicebot POC
 
-End-to-end build for the Carglass Germany **Carla** voicebot Proof-of-Concept. Validates whether an LLM/agentic voicebot can outperform the current deterministic Carla on automation rate, abandonment, configuration velocity, and customer effort, across **4 use cases**:
+End-to-end build for the Carglass Germany **Remona** voicebot Proof-of-Concept. Validates whether an LLM/agentic voicebot can outperform the current deterministic Carla on automation rate, abandonment, configuration velocity, and customer effort, across **4 use cases**:
 
 1. **UC1 — Q&A** (target automation **70%**)
 2. **UC2 — Appointment Status Check** (target **80%**)
@@ -10,7 +10,7 @@ End-to-end build for the Carglass Germany **Carla** voicebot Proof-of-Concept. V
 ## Architecture
 
 ```
-Caller (DE)  →  ElevenLabs Conversational AI Agent ("Carla")  →  n8n webhooks  →  Supabase (Postgres + Realtime + Auth)
+Caller (DE)  →  ElevenLabs Conversational AI Agent ("Remona")  →  n8n webhooks  →  Supabase (Postgres + Realtime + Auth)
                                                                                             ↓
                                                                                 Next.js Dashboard
                                                                                 (live calls, KPIs, transcripts)

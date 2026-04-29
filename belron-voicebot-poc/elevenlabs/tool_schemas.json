@@ -1,6 +1,6 @@
 {
   "$schema": "https://elevenlabs.io/schemas/conversational-tools.v1.json",
-  "agent": "Carla DE PoC",
+  "agent": "Remona DE PoC",
   "language": "de",
   "tools": [
     {

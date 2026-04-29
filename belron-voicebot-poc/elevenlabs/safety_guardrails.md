@@ -1,4 +1,4 @@
-# Safety Guardrails — Carla DE PoC
+# Safety Guardrails — Remona DE PoC
 
 The system prompt enforces these as hard rules. This document is the reference list and gives concrete escalation patterns for each.
 

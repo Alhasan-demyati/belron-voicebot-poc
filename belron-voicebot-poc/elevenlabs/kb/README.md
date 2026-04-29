@@ -1,6 +1,6 @@
 # Knowledge Base — upload to ElevenLabs
 
-This folder contains 30 German articles ready to upload into the ElevenLabs Knowledge Base attached to the Carla DE PoC agent. The agent retrieves from these for **general** questions (UC1, UC4) — FAQs, glass types, insurance basics, calibration explainer, prerequisites, etc.
+This folder contains 30 German articles ready to upload into the ElevenLabs Knowledge Base attached to the Remona DE PoC agent. The agent retrieves from these for **general** questions (UC1, UC4) — FAQs, glass types, insurance basics, calibration explainer, prerequisites, etc.
 
 > Branch-specific facts (real opening hours of a specific city, an actual appointment) come from Supabase tools, **not** from the KB. The system prompt enforces this distinction.
 

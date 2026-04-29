@@ -4,7 +4,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { LanguageProvider } from "@/lib/i18n/LanguageProvider";
 
 export const metadata: Metadata = {
-  title: "Belron — Carla DE Voicebot Dashboard",
+  title: "Belron — Remona DE Voicebot Dashboard",
   description: "Belron / Carglass Germany Voicebot POC — operations dashboard",
 };
 

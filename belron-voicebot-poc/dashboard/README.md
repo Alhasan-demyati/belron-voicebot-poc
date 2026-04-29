@@ -1,6 +1,6 @@
 # Dashboard
 
-Next.js 15 app router dashboard for the Carla DE Voicebot POC. Reads from Supabase (REST + Realtime), renders KPIs and live transcripts.
+Next.js 15 app router dashboard for the Remona DE Voicebot POC. Reads from Supabase (REST + Realtime), renders KPIs and live transcripts.
 
 ## Setup
 

@@ -1,6 +1,6 @@
 # ElevenLabs Setup — click-by-click runbook
 
-A linear walkthrough for building the **Carla DE PoC** agent in the ElevenLabs Conversational AI UI. Follow it in order; do not skip steps.
+A linear walkthrough for building the **Remona DE PoC** agent in the ElevenLabs Conversational AI UI. Follow it in order; do not skip steps.
 
 > **Estimated time:** 60–90 minutes the first time. After this, version updates take 5–10 minutes.
 
@@ -26,7 +26,7 @@ Before you start:
 1. Sign in to ElevenLabs → top nav → **Conversational AI** → **Agents**.
 2. Click **+ Create agent**.
 3. Settings:
-   - Name: `Carla DE PoC v0.3`
+   - Name: `Remona DE PoC v0.3`
    - Description: `Sprachassistentin von Carglass Deutschland — POC build, 4 Use Cases.`
    - Primary language: `German (de-DE)`
 4. Save.
@@ -79,7 +79,7 @@ Save.
 2. Paste:
 
    ```
-   Guten Tag, hier ist Carla von Carglass Deutschland. Dürfen wir das Gespräch zu Schulungs- und Qualitätszwecken aufzeichnen?
+   Guten Tag, hier ist Remona von Carglass Deutschland. Dürfen wir das Gespräch zu Schulungs- und Qualitätszwecken aufzeichnen?
    ```
 
 Save.
@@ -137,7 +137,7 @@ After all 11 tools are saved, the agent's tool count in the Tools tab should rea
    - Top-K: `3`
    - Similarity threshold: `0.30`
    - Re-rank: enabled (if available in your tier)
-5. Attach the KB to your agent (toggle **Attach to: Carla DE PoC v0.3**).
+5. Attach the KB to your agent (toggle **Attach to: Remona DE PoC v0.3**).
 6. Save.
 
 Quick verification:

@@ -45,7 +45,7 @@ export function Sidebar() {
           priority
           className="h-12 w-auto"
         />
-        <div className="mt-3 text-sm font-semibold text-belron-red">Carla DE</div>
+        <div className="mt-3 text-sm font-semibold text-belron-red">Remona DE</div>
         <div className="text-xs text-neutral-500">{t("app.subtitle")}</div>
       </div>
       <nav className="mt-2 flex-1 px-2">

@@ -175,7 +175,7 @@ function CallModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4 dark:border-neutral-800">
           <div>
-            <div className="text-sm font-semibold">Carla DE</div>
+            <div className="text-sm font-semibold">Remona DE</div>
             <div className={`text-xs ${statusLabel[status].color}`}>
               {statusLabel[status].text}
             </div>
