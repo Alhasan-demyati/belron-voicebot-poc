@@ -1,0 +1,422 @@
+{
+  "$schema": "https://elevenlabs.io/schemas/conversational-tools.v1.json",
+  "agent": "Carla DE PoC",
+  "language": "de",
+  "tools": [
+    {
+      "name": "get_customer_by_phone",
+      "description": "Sucht den Kunden anhand der Telefonnummer, die der Anrufer ausgesprochen und bestätigt hat. Wird nach der Bestätigung der Ziffern aufgerufen. Gibt den Kunden und die letzten 3 Termine zurück.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phone": {
+            "type": "string",
+            "description": "Die Telefonnummer, wie der Kunde sie ausgesprochen hat. Kann mit oder ohne Ländervorwahl sein. Das System normalisiert sie auf E.164 (z. B. +491701234001)."
+          }
+        },
+        "required": ["phone"]
+      },
+      "webhook": {
+        "url": "{{N8N_BASE_URL}}/webhook/get-customer-by-phone",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json",
+          "X-Auth-Secret": "{{N8N_SHARED_SECRET}}",
+          "X-Source": "elevenlabs"
+        },
+        "request_body_template": {
+          "conversation_id": "{{system__conversation_id}}",
+          "spoken_phone": "{{phone}}"
+        },
+        "timeout_ms": 8000
+      },
+      "response_schema": {
+        "type": "object",
+        "properties": {
+          "ok": {"type": "boolean"},
+          "data": {
+            "type": "object",
+            "properties": {
+              "found": {"type": "boolean"},
+              "customer": {
+                "type": ["object","null"],
+                "properties": {
+                  "id": {"type": "string"},
+                  "first_name": {"type": "string"},
+                  "last_name": {"type": "string"},
+                  "phone_e164": {"type": "string"},
+                  "language": {"type": "string"}
+                }
+              },
+              "recent_appointments": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "booking_reference": {"type": "string"},
+                    "status": {"type": "string"},
+                    "scheduled_start": {"type": "string"},
+                    "branch_name": {"type": "string"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    {
+      "name": "find_customer",
+      "description": "Fallback-Suche, wenn die Telefonnummer keinen Treffer liefert. Akzeptiert Kennzeichen, Buchungsreferenz, oder Name + Postleitzahl. Mindestens eine Identifikationsangabe ist erforderlich.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "license_plate": {"type": "string", "description": "Kennzeichen ohne Leerzeichen, z. B. B-AB1234."},
+          "booking_ref":   {"type": "string", "description": "Buchungsreferenz, z. B. CG-7K9F2."},
+          "name":          {"type": "string", "description": "Voller Name, mindestens Nachname."},
+          "postal_code":   {"type": "string", "description": "Deutsche Postleitzahl, 5-stellig."}
+        }
+      },
+      "webhook": {
+        "url": "{{N8N_BASE_URL}}/webhook/find-customer",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json",
+          "X-Auth-Secret": "{{N8N_SHARED_SECRET}}",
+          "X-Source": "elevenlabs"
+        },
+        "request_body_template": {
+          "conversation_id": "{{system__conversation_id}}",
+          "license_plate": "{{license_plate}}",
+          "booking_ref":   "{{booking_ref}}",
+          "name":          "{{name}}",
+          "postal_code":   "{{postal_code}}"
+        },
+        "timeout_ms": 8000
+      }
+    },
+
+    {
+      "name": "get_appointment",
+      "description": "Lädt einen einzelnen Termin samt Status, geplanter Uhrzeit, voraussichtlicher Fertigstellung (eta_ready_at) und Filiale. Mindestens entweder appointment_id oder booking_ref ist erforderlich.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointment_id": {"type": "string", "description": "Interne UUID des Termins."},
+          "booking_ref":    {"type": "string", "description": "Buchungsreferenz, z. B. CG-7K9F2."}
+        }
+      },
+      "webhook": {
+        "url": "{{N8N_BASE_URL}}/webhook/get-appointment",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json",
+          "X-Auth-Secret": "{{N8N_SHARED_SECRET}}",
+          "X-Source": "elevenlabs"
+        },
+        "request_body_template": {
+          "conversation_id": "{{system__conversation_id}}",
+          "appointment_id":  "{{appointment_id}}",
+          "booking_ref":     "{{booking_ref}}"
+        },
+        "timeout_ms": 8000
+      }
+    },
+
+    {
+      "name": "list_appointments",
+      "description": "Listet die offenen / aktiven Termine eines Kunden auf (scheduled, checked_in, in_progress, ready_for_pickup). Wird verwendet, wenn der Kunde mehr als einen Termin haben könnte.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {"type": "string", "description": "Interne UUID des Kunden."}
+        },
+        "required": ["customer_id"]
+      },
+      "webhook": {
+        "url": "{{N8N_BASE_URL}}/webhook/list-appointments",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json",
+          "X-Auth-Secret": "{{N8N_SHARED_SECRET}}",
+          "X-Source": "elevenlabs"
+        },
+        "request_body_template": {
+          "conversation_id": "{{system__conversation_id}}",
+          "customer_id":     "{{customer_id}}"
+        },
+        "timeout_ms": 8000
+      }
+    },
+
+    {
+      "name": "check_availability",
+      "description": "Liefert eine Liste freier Slots für eine Filiale, einen Service und einen Zeitraum. Wird in UC3 (Reschedule) aufgerufen, bevor ein neuer Termin vorgeschlagen wird.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branch_id":  {"type": "string", "description": "Interne UUID der Filiale."},
+          "service_id": {"type": "string", "description": "Interne UUID des Services (z. B. Frontscheibe ersetzen)."},
+          "from_date":  {"type": "string", "description": "Frühester Slot, ISO 8601, z. B. 2026-04-29T08:00:00+02:00."},
+          "to_date":    {"type": "string", "description": "Spätester Slot, ISO 8601."}
+        },
+        "required": ["branch_id","service_id","from_date","to_date"]
+      },
+      "webhook": {
+        "url": "{{N8N_BASE_URL}}/webhook/check-availability",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json",
+          "X-Auth-Secret": "{{N8N_SHARED_SECRET}}",
+          "X-Source": "elevenlabs"
+        },
+        "request_body_template": {
+          "conversation_id": "{{system__conversation_id}}",
+          "branch_id":  "{{branch_id}}",
+          "service_id": "{{service_id}}",
+          "from_date":  "{{from_date}}",
+          "to_date":    "{{to_date}}"
+        },
+        "timeout_ms": 10000
+      }
+    },
+
+    {
+      "name": "book_appointment",
+      "description": "Bucht einen NEUEN Termin für den Kunden (UC5). Erstellt automatisch einen Kunden-Datensatz, falls die Telefonnummer noch nicht im System ist, und ein Fahrzeug-Datensatz aus den Angaben (Marke, Modell, Baujahr). Service wird intern aus glass_type + damage_size abgeleitet (windshield+small → Reparatur, sonst Ersatz; side/rear → Ersatz). NIEMALS aufrufen, ohne dass der Kunde verbal zugestimmt hat. confirmation_token ist Pflicht.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "spoken_phone":       {"type": "string", "description": "Bestätigte Telefonnummer des Kunden."},
+          "name":               {"type": "string", "description": "Voller Name des Kunden (Vor- und Nachname). Pflicht für Neukunden, optional für Bestandskunden."},
+          "branch":             {"type": "string", "description": "Filiale: Stadt, Filialname oder code (z. B. 'Berlin Mitte', 'B-BER-01'). Wird intern auf branch_id aufgelöst."},
+          "start_time":         {"type": "string", "description": "Vom Kunden bestätigter Slot-Beginn, ISO 8601 (aus check_availability)."},
+          "glass_type":         {"type": "string", "enum": ["windshield","side","rear"], "description": "Welches Glas ist beschädigt."},
+          "damage_size":        {"type": "string", "enum": ["small","medium","large"], "description": "Größe des Schadens. small = Steinschlag (< 2 €-Stück), medium = bis ca. 5 cm, large = Riss / großer Schaden."},
+          "vehicle_make":       {"type": "string", "description": "Fahrzeug-Marke (z. B. BMW, VW, Audi)."},
+          "vehicle_model":      {"type": "string", "description": "Fahrzeug-Modell (z. B. Golf, A4, X3)."},
+          "vehicle_year":       {"type": "integer", "description": "Baujahr des Fahrzeugs (z. B. 2019)."},
+          "insurance_provider": {"type": "string", "description": "Versicherung des Kunden (Name oder 'selbstzahler' falls keine)."},
+          "damage_notes":       {"type": "string", "description": "Optionaler Freitext zum Schaden."},
+          "confirmation_token": {"type": "string", "description": "Bestätigungs-Token: Phrase oder ID, die signalisiert, dass der Kunde verbal zugestimmt hat (z. B. 'confirmed_2026-05-07T14:00')."}
+        },
+        "required": ["spoken_phone","branch","start_time","glass_type","damage_size","confirmation_token"]
+      },
+      "webhook": {
+        "url": "{{N8N_BASE_URL}}/webhook/book-appointment",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json",
+          "X-Auth-Secret": "{{N8N_SHARED_SECRET}}",
+          "X-Source": "elevenlabs"
+        },
+        "request_body_template": {
+          "conversation_id":    "{{system__conversation_id}}",
+          "spoken_phone":       "{{spoken_phone}}",
+          "name":               "{{name}}",
+          "branch":             "{{branch}}",
+          "start_time":         "{{start_time}}",
+          "glass_type":         "{{glass_type}}",
+          "damage_size":        "{{damage_size}}",
+          "vehicle_make":       "{{vehicle_make}}",
+          "vehicle_model":      "{{vehicle_model}}",
+          "vehicle_year":       "{{vehicle_year}}",
+          "insurance_provider": "{{insurance_provider}}",
+          "damage_notes":       "{{damage_notes}}",
+          "confirmation_token": "{{confirmation_token}}"
+        },
+        "timeout_ms": 12000
+      }
+    },
+
+    {
+      "name": "reschedule_appointment",
+      "description": "Bucht den Termin auf einen neuen Zeitpunkt um. NIEMALS aufrufen, ohne dass der Kunde verbal zugestimmt hat. Der confirmation_token muss mitgegeben werden — er ist der Beweis, dass die Bestätigung erfolgt ist.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointment_id":     {"type": "string", "description": "Interne UUID des umzubuchenden Termins."},
+          "new_start":          {"type": "string", "description": "Neue Startzeit, ISO 8601."},
+          "confirmation_token": {"type": "string", "description": "Bestätigungs-Token: Phrase oder ID, die signalisiert, dass der Kunde verbal zugestimmt hat (z. B. 'confirmed_2026-05-07T14:00')."}
+        },
+        "required": ["appointment_id","new_start","confirmation_token"]
+      },
+      "webhook": {
+        "url": "{{N8N_BASE_URL}}/webhook/reschedule-appointment",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json",
+          "X-Auth-Secret": "{{N8N_SHARED_SECRET}}",
+          "X-Source": "elevenlabs"
+        },
+        "request_body_template": {
+          "conversation_id":    "{{system__conversation_id}}",
+          "appointment_id":     "{{appointment_id}}",
+          "new_start":          "{{new_start}}",
+          "confirmation_token": "{{confirmation_token}}"
+        },
+        "timeout_ms": 10000
+      }
+    },
+
+    {
+      "name": "cancel_appointment",
+      "description": "Storniert einen Termin. Genau wie reschedule_appointment niemals ohne verbale Bestätigung aufrufen.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointment_id":     {"type": "string", "description": "Interne UUID des zu stornierenden Termins."},
+          "reason":             {"type": "string", "description": "Kurzer Grund, vom Kunden genannt."},
+          "confirmation_token": {"type": "string", "description": "Bestätigungs-Token (siehe reschedule_appointment)."}
+        },
+        "required": ["appointment_id","confirmation_token"]
+      },
+      "webhook": {
+        "url": "{{N8N_BASE_URL}}/webhook/cancel-appointment",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json",
+          "X-Auth-Secret": "{{N8N_SHARED_SECRET}}",
+          "X-Source": "elevenlabs"
+        },
+        "request_body_template": {
+          "conversation_id":    "{{system__conversation_id}}",
+          "appointment_id":     "{{appointment_id}}",
+          "reason":             "{{reason}}",
+          "confirmation_token": "{{confirmation_token}}"
+        },
+        "timeout_ms": 10000
+      }
+    },
+
+    {
+      "name": "transfer_to_agent",
+      "description": "Übergibt das Gespräch an einen menschlichen Mitarbeiter. Wird bei Filialwechsel-Wünschen, außerhalb des Scopes, wiederholten Fehlern, ausdrücklichem Kundenwunsch oder Sicherheitsereignissen aufgerufen. Nach diesem Tool keine CES-Frage stellen.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reason_code":   {"type": "string", "enum": ["consent_declined","location_change","out_of_scope","customer_request","low_confidence","repeated_failure","customer_not_found","safety","other"], "description": "Strukturierter Grund."},
+          "summary":       {"type": "string", "description": "1–3 Sätze: was bisher passiert ist, was der Kunde will, wo es hakt. Wird dem Mitarbeiter beim Übernehmen angezeigt."},
+          "customer_data": {
+            "type": "object",
+            "description": "Was bisher über den Kunden bekannt ist.",
+            "properties": {
+              "first_name":        {"type": "string"},
+              "last_name":         {"type": "string"},
+              "phone_e164":        {"type": "string"},
+              "booking_reference": {"type": "string"},
+              "license_plate":     {"type": "string"},
+              "preferred_branch":  {"type": "string"},
+              "desired_datetime":  {"type": "string"}
+            }
+          }
+        },
+        "required": ["reason_code","summary"]
+      },
+      "webhook": {
+        "url": "{{N8N_BASE_URL}}/webhook/transfer-to-agent",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json",
+          "X-Auth-Secret": "{{N8N_SHARED_SECRET}}",
+          "X-Source": "elevenlabs"
+        },
+        "request_body_template": {
+          "conversation_id": "{{system__conversation_id}}",
+          "reason_code":     "{{reason_code}}",
+          "summary":         "{{summary}}",
+          "customer_data":   "{{customer_data}}"
+        },
+        "timeout_ms": 8000
+      }
+    },
+
+    {
+      "name": "submit_ces_rating",
+      "description": "Speichert die Kundenbewertung am Ende des Gesprächs. Skala 1–10. Wird auf JEDEM Anruf vor end_call aufgerufen — auch wenn der Kunde ablehnt (dann mit declined=true).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "score":    {"type": ["integer","null"], "minimum": 1, "maximum": 10, "description": "Bewertung 1–10. Null oder weglassen, wenn Kunde keine Zahl genannt hat."},
+          "declined": {"type": "boolean", "description": "true, wenn der Kunde aktiv abgelehnt hat oder vor der Frage aufgelegt hat."},
+          "comment":  {"type": "string", "description": "Optionaler Freitext-Kommentar, falls der Kunde Gründe genannt hat."}
+        }
+      },
+      "webhook": {
+        "url": "{{N8N_BASE_URL}}/webhook/submit-ces-rating",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json",
+          "X-Auth-Secret": "{{N8N_SHARED_SECRET}}",
+          "X-Source": "elevenlabs"
+        },
+        "request_body_template": {
+          "conversation_id": "{{system__conversation_id}}",
+          "score":           "{{score}}",
+          "declined":        "{{declined}}",
+          "comment":         "{{comment}}"
+        },
+        "timeout_ms": 6000
+      }
+    },
+
+    {
+      "name": "log_safety_event",
+      "description": "Internes Tool: erfasst eine Sicherheits- oder Guardrail-Auslösung (Off-Topic, mögliche Halluzination, PII-Risiko). Wird vom System / der Agent-Logik aufgerufen, nicht vom Kunden ausgelöst.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_type": {"type": "string", "enum": ["hallucination_suspect","pii_leakage","out_of_scope","prompt_injection","unsafe_topic","tool_failure","other"]},
+          "severity":   {"type": "string", "enum": ["info","warning","error","critical"]},
+          "details":    {"type": "object", "description": "Frei strukturierte Zusatzinformationen."}
+        },
+        "required": ["event_type","severity"]
+      },
+      "webhook": {
+        "url": "{{N8N_BASE_URL}}/webhook/log-safety-event",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json",
+          "X-Auth-Secret": "{{N8N_SHARED_SECRET}}",
+          "X-Source": "elevenlabs"
+        },
+        "request_body_template": {
+          "conversation_id": "{{system__conversation_id}}",
+          "event_type":      "{{event_type}}",
+          "severity":        "{{severity}}",
+          "details":         "{{details}}"
+        },
+        "timeout_ms": 6000
+      }
+    },
+
+    {
+      "name": "end_call",
+      "description": "Beendet das Gespräch sauber. Erst NACH submit_ces_rating aufrufen. Triggert post_call_finalize zur Berechnung des Outcomes-Datensatzes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outcome": {"type": "string", "enum": ["completed_automated","completed_with_handover","abandoned"], "description": "Endstatus des Gesprächs."}
+        },
+        "required": ["outcome"]
+      },
+      "webhook": {
+        "url": "{{N8N_BASE_URL}}/webhook/post-call-finalize",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json",
+          "X-Auth-Secret": "{{N8N_SHARED_SECRET}}",
+          "X-Source": "elevenlabs"
+        },
+        "request_body_template": {
+          "event":            "conversation.ended",
+          "external_call_id": "{{system__conversation_id}}",
+          "ended_at":         "{{system__now}}",
+          "status":           "{{outcome}}"
+        },
+        "timeout_ms": 8000
+      }
+    }
+  ]
+}

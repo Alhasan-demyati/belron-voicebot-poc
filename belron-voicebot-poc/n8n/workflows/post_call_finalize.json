@@ -1,0 +1,102 @@
+{
+  "name": "voicebot - post_call_finalize",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "post-call-finalize",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "cccccccc-cccc-cccc-cccc-cccccccccc01",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "webhookId": "post-call-finalize"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Webhook auth for the ElevenLabs post-call event.\n// IMPORTANT POC NOTE: ElevenLabs signs the RAW request body (HMAC over\n// `t=<unix>.<rawBody>`). n8n's webhook node parses JSON before this code\n// runs, so re-serializing $json.body produces different bytes than what was\n// signed and the HMAC never matches. For the POC we therefore accept the\n// request when ANY of the following holds:\n//   1) X-Auth-Secret static header matches CARGLASS_N8N_SHARED_SECRET\n//   2) The request carries an ElevenLabs-Signature header (presence proves\n//      it came through ElevenLabs' webhook subsystem; we cannot strict-verify\n//      without raw bytes)\n//   3) The request carries `x-source: elevenlabs` (ElevenLabs adds this).\n// For production, switch the n8n webhook node to raw-body mode and verify\n// HMAC against the original bytes.\nconst headers = $input.first().json.headers || {};\nconst body = $input.first().json.body || {};\nlet authorized = false;\nlet reason = 'unauthorized';\n\nif (headers['x-auth-secret'] && $vars.CARGLASS_N8N_SHARED_SECRET &&\n    headers['x-auth-secret'] === $vars.CARGLASS_N8N_SHARED_SECRET) {\n  authorized = true; reason = 'static_secret';\n} else if (headers['elevenlabs-signature']) {\n  authorized = true; reason = 'elevenlabs_signature_present';\n} else if ((headers['x-source'] || '').toLowerCase() === 'elevenlabs') {\n  authorized = true; reason = 'elevenlabs_x_source';\n}\n\nreturn [{ json: { headers, body, _authorized: authorized, _auth_reason: reason } }];\n"
+      },
+      "id": "cccccccc-cccc-cccc-cccc-ccccccccccA1",
+      "name": "Auth Compute",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [320, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{$json._authorized}}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "cccccccc-cccc-cccc-cccc-cccccccccc02",
+      "name": "Auth Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\": false, \"error_code\": \"UNAUTHORIZED\"}",
+        "options": { "responseCode": 401 }
+      },
+      "id": "cccccccc-cccc-cccc-cccc-cccccccccc03",
+      "name": "Respond 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [640, 460]
+    },
+    {
+      "parameters": {
+        "jsCode": "// post_call_finalize — handles ElevenLabs `post_call_transcription` webhook.\n// ElevenLabs sends ONE webhook per call with the full transcript inside.\n// We extract: calls, conversations, conversation_turns, tool_calls, outcomes,\n// customer_feedback (placeholder), all from this single payload.\n\nconst _h = this.helpers;\nconst fetch = async (url, init = {}) => {\n  const opts = { method: init.method || 'GET', url, headers: { ...(init.headers || {}) }, json: true, timeout: 15000, returnFullResponse: false };\n  if (opts.headers['Content-Type']) delete opts.headers['Content-Type'];\n  if (opts.headers['content-type']) delete opts.headers['content-type'];\n  if (init.body !== undefined) {\n    if (typeof init.body === 'string') { try { opts.body = JSON.parse(init.body); } catch { opts.body = init.body; } }\n    else opts.body = init.body;\n  }\n  try {\n    const data = await _h.httpRequest(opts);\n    return { ok: true, status: 200, json: async () => data, text: async () => (typeof data === 'string' ? data : JSON.stringify(data)) };\n  } catch (e) {\n    const status = (e && e.statusCode) || (e && e.response && e.response.statusCode) || (e && e.cause && e.cause.statusCode) || 500;\n    let errBody = (e && e.response && e.response.body) ?? (e && e.cause && e.cause.body) ?? null;\n    if (errBody && typeof errBody !== 'string') { try { errBody = JSON.stringify(errBody); } catch { errBody = String(errBody); } }\n    if (!errBody && e && e.message) errBody = e.message;\n    return { ok: false, status, json: async () => { try { return JSON.parse(errBody); } catch { return errBody; } }, text: async () => String(errBody) };\n  }\n};\n\nconst body = $input.first().json.body || {};\nconst sb = $vars.CARGLASS_SUPABASE_URL;\nconst sbHeaders = {\n  apikey: $vars.CARGLASS_SUPABASE_SERVICE_ROLE_KEY,\n  Authorization: 'Bearer ' + $vars.CARGLASS_SUPABASE_SERVICE_ROLE_KEY,\n};\nasync function fetchJson(url, opts) {\n  const o = { ...(opts || {}) };\n  o.headers = { ...sbHeaders, ...((opts && opts.headers) || {}) };\n  const r = await fetch(url, o);\n  if (!r.ok) throw new Error('Supabase ' + r.status + ': ' + (await r.text()));\n  return await r.json();\n}\nfunction safeParse(v) {\n  if (v === null || v === undefined) return null;\n  if (typeof v !== 'string') return v;\n  try { return JSON.parse(v); } catch { return v; }\n}\n\n// ============================================================\n// ElevenLabs post_call_transcription handler (ONE event per call)\n// ============================================================\nasync function handlePostCall(data) {\n  const ext_id = data.conversation_id;\n  if (!ext_id) return { ok: false, error_code: 'NO_CONVERSATION_ID' };\n\n  const meta = data.metadata || {};\n  const startUnix = meta.start_time_unix_secs || meta.start_time_unix || meta.start_time || null;\n  const startedAt = startUnix ? new Date(startUnix * 1000).toISOString() : new Date().toISOString();\n  const durationSec = meta.call_duration_secs || meta.call_duration || 0;\n  const endedAt = startUnix\n    ? new Date((startUnix + durationSec) * 1000).toISOString()\n    : new Date().toISOString();\n  const language = (meta.main_language || data.language || 'de').slice(0, 5);\n  const transcript = Array.isArray(data.transcript) ? data.transcript : [];\n\n  // 1) Upsert call (idempotent on external_call_id)\n  const callRows = await fetchJson(`${sb}/rest/v1/calls?on_conflict=external_call_id`, {\n    method: 'POST',\n    headers: {\n      Prefer: 'resolution=merge-duplicates,return=representation',\n    },\n    body: {\n      external_call_id: ext_id,\n      started_at: startedAt,\n      ended_at: endedAt,\n      duration_seconds: Math.max(1, Math.round(durationSec)),\n      language_detected: language,\n      consent_recorded: true,\n    },\n  });\n  const call_id = callRows[0].id;\n\n  // 2) Find or create conversation row for this call\n  const existing = await fetchJson(`${sb}/rest/v1/conversations?call_id=eq.${call_id}&select=id&limit=1`);\n  let conversation_id;\n  if (existing.length) {\n    conversation_id = existing[0].id;\n    await fetchJson(`${sb}/rest/v1/conversations?id=eq.${conversation_id}`, {\n      method: 'PATCH',\n      headers: { Prefer: 'return=minimal' },\n      body: { ended_at: endedAt, language },\n    });\n  } else {\n    const av = await fetchJson(`${sb}/rest/v1/agent_versions?is_active=is.true&select=id&limit=1`);\n    const agent_version_id = av.length ? av[0].id : null;\n    const cv = await fetchJson(`${sb}/rest/v1/conversations`, {\n      method: 'POST',\n      headers: { Prefer: 'return=representation' },\n      body: {\n        call_id,\n        agent_version_id,\n        language,\n        status: 'in_progress',\n        started_at: startedAt,\n        ended_at: endedAt,\n      },\n    });\n    conversation_id = cv[0].id;\n  }\n\n  // 3) Replace turns + tool_calls (idempotent on retries)\n  await fetchJson(`${sb}/rest/v1/conversation_turns?conversation_id=eq.${conversation_id}`, {\n    method: 'DELETE',\n    headers: { Prefer: 'return=minimal' },\n  });\n  await fetchJson(`${sb}/rest/v1/tool_calls?conversation_id=eq.${conversation_id}`, {\n    method: 'DELETE',\n    headers: { Prefer: 'return=minimal' },\n  });\n\n  let turn_index = 0;\n  let tool_calls_count = 0;\n  let tool_call_failures = 0;\n  const turnRows = [];\n  const toolRows = [];\n  for (const t of transcript) {\n    const role = t.role === 'user' ? 'user' : 'agent';\n    const text = t.message || t.text || t.content || '';\n    const tInCall = (typeof t.time_in_call_secs === 'number') ? t.time_in_call_secs : null;\n    const turnTs = (startUnix && tInCall !== null) ? new Date((startUnix + tInCall) * 1000).toISOString() : startedAt;\n    if (text) {\n      turnRows.push({\n        conversation_id,\n        turn_index: turn_index++,\n        role,\n        text,\n        latency_ms: null,\n        created_at: turnTs,\n      });\n    }\n    const calls = Array.isArray(t.tool_calls) ? t.tool_calls : [];\n    const results = Array.isArray(t.tool_results) ? t.tool_results : [];\n    for (const tc of calls) {\n      tool_calls_count++;\n      const tcId = tc.tool_call_id || tc.id || null;\n      const matched = results.find(r => (r.tool_call_id || r.id) === tcId) || null;\n      const isError = !!(matched && (matched.is_error || matched.error || matched.failed));\n      const status = isError ? 'error' : 'success';\n      if (isError) tool_call_failures++;\n      toolRows.push({\n        conversation_id,\n        tool_name: tc.tool_name || tc.name || tc.function_name || 'unknown',\n        request_payload: safeParse(tc.params_as_json) || tc.params || tc.parameters || tc.arguments || null,\n        response_payload: matched ? (safeParse(matched.result_value) || matched.result || matched.value || null) : null,\n        status,\n        latency_ms: null,\n        error_message: isError ? (matched && (matched.error_message || matched.error)) || null : null,\n        created_at: turnTs,\n      });\n    }\n  }\n\n  if (turnRows.length) {\n    await fetchJson(`${sb}/rest/v1/conversation_turns`, {\n      method: 'POST',\n      headers: { Prefer: 'return=minimal' },\n      body: turnRows,\n    });\n  }\n  if (toolRows.length) {\n    await fetchJson(`${sb}/rest/v1/tool_calls`, {\n      method: 'POST',\n      headers: { Prefer: 'return=minimal' },\n      body: toolRows,\n    });\n  }\n\n  // 4) Outcome\n  const handovers = await fetchJson(`${sb}/rest/v1/handovers?conversation_id=eq.${conversation_id}&select=id&limit=1`);\n  const handover = handovers.length > 0;\n  const callStatus = data.status || data.call_status || 'done';\n  const failedStatuses = ['failed', 'error', 'cancelled', 'aborted'];\n  const finalStatus = handover\n    ? 'completed_with_handover'\n    : (failedStatuses.includes(callStatus) ? 'abandoned' : 'completed_automated');\n\n  await fetchJson(`${sb}/rest/v1/conversations?id=eq.${conversation_id}`, {\n    method: 'PATCH',\n    headers: { Prefer: 'return=minimal' },\n    body: { status: finalStatus, ended_at: endedAt },\n  });\n\n  await fetchJson(`${sb}/rest/v1/outcomes?on_conflict=conversation_id`, {\n    method: 'POST',\n    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },\n    body: {\n      conversation_id,\n      use_case: null,\n      automated: finalStatus === 'completed_automated',\n      abandoned: finalStatus === 'abandoned',\n      abandonment_stage: null,\n      handover,\n      handover_qualified: null,\n      aht_seconds: Math.max(1, Math.round(durationSec)),\n      time_to_first_response_ms: null,\n      tool_calls_count,\n      tool_call_failures,\n      customer_goal_completed: finalStatus === 'completed_automated',\n      recomputed_at: new Date().toISOString(),\n    },\n  });\n\n  // 5) CES placeholder if no in-call rating row exists\n  const cf = await fetchJson(`${sb}/rest/v1/customer_feedback?conversation_id=eq.${conversation_id}&select=id&limit=1`);\n  if (!cf.length) {\n    await fetchJson(`${sb}/rest/v1/customer_feedback`, {\n      method: 'POST',\n      headers: { Prefer: 'return=minimal' },\n      body: {\n        conversation_id,\n        ces_score: null,\n        ces_collected: false,\n        ces_question: 'Auf einer Skala von 1 bis 10, wie würden Sie unser Gespräch heute bewerten?',\n        source: 'in_call',\n      },\n    });\n  }\n\n  return {\n    ok: true,\n    data: {\n      call_id,\n      conversation_id,\n      turns: turnRows.length,\n      tool_calls: tool_calls_count,\n      tool_call_failures,\n      status: finalStatus,\n    },\n  };\n}\n\n// Route by event type\nconst evType = body.type || body.event;\nif (evType === 'post_call_transcription') {\n  const out = await handlePostCall(body.data || {});\n  return [{ json: out }];\n}\n// Some accounts wrap data differently; try a fallback shape\nif (body.conversation_id && Array.isArray(body.transcript)) {\n  const out = await handlePostCall(body);\n  return [{ json: out }];\n}\n\nreturn [{ json: { ok: false, error_code: 'UNKNOWN_EVENT', received: evType || null } }];\n"
+      },
+      "id": "cccccccc-cccc-cccc-cccc-cccccccccc04",
+      "name": "Finalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 220]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($('Finalize').first().json) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "cccccccc-cccc-cccc-cccc-cccccccccc05",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [860, 220]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Auth Compute", "type": "main", "index": 0 }]] },
+    "Auth Compute": { "main": [[{ "node": "Auth Check", "type": "main", "index": 0 }]] },
+    "Auth Check": {
+      "main": [
+        [{ "node": "Finalize", "type": "main", "index": 0 }],
+        [{ "node": "Respond 401", "type": "main", "index": 0 }]
+      ]
+    },
+    "Finalize": { "main": [[{ "node": "Respond Success", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "tags": [
+    { "name": "voicebot" },
+    { "name": "carglass" },
+    { "name": "telemetry" }
+  ]
+}

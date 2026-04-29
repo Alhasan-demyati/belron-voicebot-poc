@@ -1,0 +1,87 @@
+{
+  "name": "voicebot - check_availability",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "check-availability",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "55555555-5555-5555-5555-555555555501",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [200, 300],
+      "webhookId": "check-availability"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "leftValue": "={{$node[\"Webhook\"].json[\"headers\"][\"x-auth-secret\"]}}",
+              "rightValue": "={{$vars.CARGLASS_N8N_SHARED_SECRET}}",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "55555555-5555-5555-5555-555555555502",
+      "name": "Auth Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\": false, \"error_code\": \"UNAUTHORIZED\", \"message_for_agent\": \"Authentifizierung fehlgeschlagen.\"}",
+        "options": { "responseCode": 401 }
+      },
+      "id": "55555555-5555-5555-5555-555555555503",
+      "name": "Respond 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [640, 460]
+    },
+    {
+      "parameters": {
+        "jsCode": "const _h = this.helpers;\nconst fetch = async (url, init = {}) => {\n  const opts = { method: init.method || 'GET', url, headers: { ...(init.headers || {}) }, json: true, timeout: 12000, returnFullResponse: false };\n  if (opts.headers['Content-Type']) delete opts.headers['Content-Type'];\n  if (opts.headers['content-type']) delete opts.headers['content-type'];\n  if (init.body !== undefined) {\n    if (typeof init.body === 'string') { try { opts.body = JSON.parse(init.body); } catch { opts.body = init.body; } }\n    else opts.body = init.body;\n  }\n  try {\n    const data = await _h.httpRequest(opts);\n    return { ok: true, status: 200, json: async () => data, text: async () => (typeof data === 'string' ? data : JSON.stringify(data)) };\n  } catch (e) {\n    const status = (e && e.statusCode) || (e && e.response && e.response.statusCode) || (e && e.cause && e.cause.statusCode) || 500;\n    let errBody = (e && e.response && e.response.body) ?? (e && e.cause && e.cause.body) ?? null;\n    if (errBody && typeof errBody !== 'string') { try { errBody = JSON.stringify(errBody); } catch { errBody = String(errBody); } }\n    if (!errBody && e && e.message) errBody = e.message;\n    return { ok: false, status, json: async () => { try { return JSON.parse(errBody); } catch { return errBody; } }, text: async () => String(errBody) };\n  }\n};\n\nconst body = $input.first().json.body || {};\nlet { branch_id, service_id, from_date, to_date } = body;\nif (!branch_id || !service_id) {\n  return [{ json: { ok: false, error_code: 'MISSING_PARAMS', message_for_agent: 'Bitte Filiale und Service angeben.' } }];\n}\nconst headers = { apikey: $vars.CARGLASS_SUPABASE_SERVICE_ROLE_KEY, Authorization: 'Bearer ' + $vars.CARGLASS_SUPABASE_SERVICE_ROLE_KEY };\nconst sb = $vars.CARGLASS_SUPABASE_URL;\nasync function fetchJson(url) {\n  const r = await fetch(url, { headers });\n  if (!r.ok) throw new Error('Supabase ' + r.status + ': ' + (await r.text()));\n  return await r.json();\n}\n\nconst UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\n\n// Resolve branch_id from slug/name/city if it's not a UUID\nif (!UUID_RE.test(String(branch_id))) {\n  const term = String(branch_id).trim().toLowerCase();\n  const enc = encodeURIComponent(term);\n  const found = await fetchJson(`${sb}/rest/v1/branches?select=id,name,city,code,active&or=(code.ilike.${enc},name.ilike.*${enc}*,city.ilike.*${enc}*)&limit=1`);\n  if (!found.length) {\n    return [{ json: { ok: false, error_code: 'BRANCH_NOT_FOUND', message_for_agent: `Filiale '${branch_id}' nicht gefunden.` } }];\n  }\n  branch_id = found[0].id;\n}\n\n// Resolve service_id from slug/code if not a UUID\nif (!UUID_RE.test(String(service_id))) {\n  const term = String(service_id).trim().toLowerCase();\n  const enc = encodeURIComponent(term);\n  // Try exact code match first, then fuzzy on names\n  let found = await fetchJson(`${sb}/rest/v1/services?select=id,code,name_de,name_en&code=eq.${enc}&limit=1`);\n  if (!found.length) {\n    found = await fetchJson(`${sb}/rest/v1/services?select=id,code,name_de,name_en&or=(name_de.ilike.*${enc}*,name_en.ilike.*${enc}*)&limit=1`);\n  }\n  // Common-language fallbacks\n  if (!found.length) {\n    const map = { windshield_replacement: 'frontscheibe_ersatz', windshield_repair: 'frontscheibe_reparatur', side_window: 'seitenscheibe', rear_window: 'heckscheibe', calibration: 'kalibrierung', front: 'frontscheibe_ersatz' };\n    const guess = map[term];\n    if (guess) {\n      found = await fetchJson(`${sb}/rest/v1/services?select=id,code&code=eq.${guess}&limit=1`);\n    }\n  }\n  if (!found.length) {\n    return [{ json: { ok: false, error_code: 'SERVICE_NOT_FOUND', message_for_agent: `Service '${service_id}' nicht gefunden.` } }];\n  }\n  service_id = found[0].id;\n}\n\n// Normalize / sanitize dates. The LLM frequently returns past dates from its\n// training-cutoff. If the requested window is in the past, slide it forward to\n// start tomorrow with a 14-day default window.\nfunction parseDate(v) {\n  if (!v) return null;\n  const s = String(v);\n  // accept date-only YYYY-MM-DD\n  const dOnly = s.match(/^\\d{4}-\\d{2}-\\d{2}$/);\n  const d = new Date(dOnly ? s + 'T00:00:00Z' : s);\n  return isNaN(d.getTime()) ? null : d;\n}\nlet fromD = parseDate(from_date);\nlet toD = parseDate(to_date);\nconst now = new Date();\nconst tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);\ntomorrow.setUTCHours(7, 0, 0, 0);\nif (!fromD || fromD < now) fromD = tomorrow;\nif (!toD || toD <= fromD) {\n  toD = new Date(fromD.getTime() + 14 * 24 * 3600 * 1000);\n}\n\nconst from_iso = fromD.toISOString();\nconst to_iso = toD.toISOString();\n\nconst services = await fetchJson(`${sb}/rest/v1/services?id=eq.${service_id}&select=default_duration_minutes`);\nconst durationMin = services.length ? services[0].default_duration_minutes : 90;\nconst templates = await fetchJson(`${sb}/rest/v1/slot_templates?branch_id=eq.${branch_id}&service_id=eq.${service_id}`);\nconst existing = await fetchJson(`${sb}/rest/v1/appointments?branch_id=eq.${branch_id}&scheduled_start=gte.${encodeURIComponent(from_iso)}&scheduled_start=lte.${encodeURIComponent(to_iso)}&status=in.(scheduled,checked_in,in_progress)&select=scheduled_start,scheduled_end`);\nconst overrides = await fetchJson(`${sb}/rest/v1/slot_overrides?branch_id=eq.${branch_id}&starts_at=lte.${encodeURIComponent(to_iso)}&ends_at=gte.${encodeURIComponent(from_iso)}`);\nconst holidays = await fetchJson(`${sb}/rest/v1/branch_holidays?branch_id=eq.${branch_id}&date=gte.${from_iso.slice(0,10)}&date=lte.${to_iso.slice(0,10)}`);\nconst holidaySet = new Set(holidays.map(h => h.date));\nconst slots = [];\nfor (let d = new Date(fromD); d <= toD && slots.length < 12; d.setUTCDate(d.getUTCDate() + 1)) {\n  const isoDate = d.toISOString().slice(0,10);\n  if (holidaySet.has(isoDate)) continue;\n  const dow = (d.getUTCDay() + 6) % 7;\n  const todays = templates.filter(t => t.day_of_week === dow);\n  for (const t of todays) {\n    const [oh, om] = String(t.start_time).split(':').map(Number);\n    const [ch, cm] = String(t.end_time).split(':').map(Number);\n    let cur = new Date(d); cur.setUTCHours(oh, om, 0, 0);\n    const close = new Date(d); close.setUTCHours(ch, cm, 0, 0);\n    while (cur.getTime() + durationMin * 60000 <= close.getTime() && slots.length < 12) {\n      const slotEnd = new Date(cur.getTime() + durationMin * 60000);\n      const conflicts = existing.filter(a => {\n        const aS = new Date(a.scheduled_start);\n        const aE = new Date(a.scheduled_end);\n        return aS < slotEnd && aE > cur;\n      }).length;\n      const overrideConflict = overrides.some(ov => {\n        const oS = new Date(ov.starts_at), oE = new Date(ov.ends_at);\n        return oS < slotEnd && oE > cur && ov.bays_available === 0;\n      });\n      if (!overrideConflict && conflicts < t.bays && cur > now) {\n        slots.push({ start: cur.toISOString(), end: slotEnd.toISOString() });\n      }\n      cur = new Date(cur.getTime() + 30 * 60000);\n    }\n  }\n}\nreturn [{ json: { ok: true, data: { branch_id, service_id, duration_minutes: durationMin, from: from_iso, to: to_iso, slots } } }];\n"
+      },
+      "id": "55555555-5555-5555-5555-555555555504",
+      "name": "Compute Availability",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 220]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($('Compute Availability').first().json) }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "55555555-5555-5555-5555-555555555505",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [860, 220]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Auth Check", "type": "main", "index": 0 }]] },
+    "Auth Check": {
+      "main": [
+        [{ "node": "Compute Availability", "type": "main", "index": 0 }],
+        [{ "node": "Respond 401", "type": "main", "index": 0 }]
+      ]
+    },
+    "Compute Availability": { "main": [[{ "node": "Respond Success", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "voicebot" }, { "name": "carglass" }]
+}

@@ -1,0 +1,154 @@
+{
+  "name": "voicebot - reschedule_appointment",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "reschedule-appointment",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "66666666-6666-6666-6666-666666666601",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ],
+      "webhookId": "reschedule-appointment"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$node[\"Webhook\"].json[\"headers\"][\"x-auth-secret\"]}}",
+              "rightValue": "={{$vars.CARGLASS_N8N_SHARED_SECRET}}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "66666666-6666-6666-6666-666666666602",
+      "name": "Auth Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\": false, \"error_code\": \"UNAUTHORIZED\", \"message_for_agent\": \"Authentifizierung fehlgeschlagen.\"}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "66666666-6666-6666-6666-666666666603",
+      "name": "Respond 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        640,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const _h = this.helpers;\nconst fetch = async (url, init = {}) => {\n  const opts = { method: init.method || 'GET', url, headers: { ...(init.headers || {}) }, json: true, timeout: 10000, returnFullResponse: false };\n  if (opts.headers['Content-Type']) delete opts.headers['Content-Type'];\n  if (opts.headers['content-type']) delete opts.headers['content-type'];\n  if (init.body !== undefined) {\n    if (typeof init.body === 'string') { try { opts.body = JSON.parse(init.body); } catch { opts.body = init.body; } }\n    else opts.body = init.body;\n  }\n  try {\n    const data = await _h.httpRequest(opts);\n    return { ok: true, status: 200, json: async () => data, text: async () => (typeof data === 'string' ? data : JSON.stringify(data)) };\n  } catch (e) {\n    const status = (e && e.statusCode) || (e && e.response && e.response.statusCode) || (e && e.cause && e.cause.statusCode) || 500;\n    let errBody = (e && e.response && e.response.body) ?? (e && e.cause && e.cause.body) ?? null;\n    if (errBody && typeof errBody !== 'string') { try { errBody = JSON.stringify(errBody); } catch { errBody = String(errBody); } }\n    if (!errBody && e && e.message) errBody = e.message;\n    return { ok: false, status, json: async () => { try { return JSON.parse(errBody); } catch { return errBody; } }, text: async () => String(errBody) };\n  }\n};\n\nconst _SUPABASE_URL = $vars.CARGLASS_SUPABASE_URL;\nconst _SUPABASE_KEY = $vars.CARGLASS_SUPABASE_SERVICE_ROLE_KEY;\nconst _SB_HEADERS = { apikey: _SUPABASE_KEY, Authorization: 'Bearer ' + _SUPABASE_KEY };\nasync function resolveConvId(input) {\n  if (!input) return null;\n  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(input))) return input;\n  try {\n    const r1 = await fetch(`${_SUPABASE_URL}/rest/v1/calls?external_call_id=eq.${encodeURIComponent(input)}&select=id&limit=1`, { headers: _SB_HEADERS });\n    if (!r1.ok) return null;\n    const calls = await r1.json();\n    if (!calls.length) return null;\n    const r2 = await fetch(`${_SUPABASE_URL}/rest/v1/conversations?call_id=eq.${calls[0].id}&select=id&limit=1`, { headers: _SB_HEADERS });\n    if (!r2.ok) return null;\n    const cv = await r2.json();\n    return cv.length ? cv[0].id : null;\n  } catch (e) { return null; }\n}\n\nconst body = $input.first().json.body || {};\nbody.conversation_id = await resolveConvId(body.conversation_id);\nconst { new_start, confirmation_token, conversation_id } = body;\nlet appointment_id = body.appointment_id || body.booking_reference || body.booking_ref || '';\nif (!appointment_id || !new_start || !confirmation_token) {\n  return [{ json: { ok: false, error_code: 'CONFIRMATION_REQUIRED', message_for_agent: 'Bitte zuerst die neue Uhrzeit mit dem Kunden bestätigen.' } }];\n}\nconst headers = {\n  apikey: $vars.CARGLASS_SUPABASE_SERVICE_ROLE_KEY,\n  Authorization: 'Bearer ' + $vars.CARGLASS_SUPABASE_SERVICE_ROLE_KEY,\n  'Prefer': 'return=representation',\n};\nconst sb = $vars.CARGLASS_SUPABASE_URL;\nconst UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;\nconst lookupKey = UUID_RE.test(String(appointment_id)) ? 'id' : 'booking_reference';\nconst getR = await fetch(`${sb}/rest/v1/appointments?${lookupKey}=eq.${encodeURIComponent(appointment_id)}&select=id,booking_reference,scheduled_start,scheduled_end,status,service_id,services(default_duration_minutes)`, { headers });\nif (!getR.ok) return [{ json: { ok: false, error_code: 'NOT_FOUND', message_for_agent: 'Termin nicht gefunden.' } }];\nconst rows = await getR.json();\nif (!rows.length) return [{ json: { ok: false, error_code: 'NOT_FOUND', message_for_agent: 'Termin nicht gefunden.' } }];\nconst current = rows[0];\nappointment_id = current.id;\nconst durMin = current.services ? current.services.default_duration_minutes : 90;\nconst newEnd = new Date(new Date(new_start).getTime() + durMin * 60000).toISOString();\nconst upd = await fetch(`${sb}/rest/v1/appointments?id=eq.${appointment_id}`, {\n  method: 'PATCH', headers,\n  body: { scheduled_start: new_start, scheduled_end: newEnd, status: 'scheduled' },\n});\nif (!upd.ok) return [{ json: { ok: false, error_code: 'UPDATE_FAILED', message_for_agent: 'Termin konnte nicht aktualisiert werden.' } }];\nconst updated = (await upd.json())[0];\nawait fetch(`${sb}/rest/v1/appointment_history`, {\n  method: 'POST', headers,\n  body: {\n    appointment_id,\n    previous_status: current.status,\n    new_status: 'scheduled',\n    previous_start: current.scheduled_start,\n    new_start,\n    changed_by: 'bot',\n    conversation_id: conversation_id || null,\n    reason: 'Rebooking via voicebot — confirmation_token: ' + confirmation_token,\n  },\n});\nreturn [{ json: { ok: true, data: { appointment: {\n  id: updated.id,\n  booking_reference: updated.booking_reference,\n  new_start: updated.scheduled_start,\n  new_end: updated.scheduled_end,\n  status: updated.status,\n} } } }];\n"
+      },
+      "id": "66666666-6666-6666-6666-666666666604",
+      "name": "Reschedule",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($('Reschedule').first().json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "66666666-6666-6666-6666-666666666605",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        860,
+        220
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Auth Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check": {
+      "main": [
+        [
+          {
+            "node": "Reschedule",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reschedule": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "voicebot"
+    },
+    {
+      "name": "carglass"
+    }
+  ]
+}

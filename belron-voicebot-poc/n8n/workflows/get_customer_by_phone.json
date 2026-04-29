@@ -1,0 +1,310 @@
+{
+  "name": "voicebot - get_customer_by_phone",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "get-customer-by-phone",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "11111111-1111-1111-1111-111111111101",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ],
+      "webhookId": "get-customer-by-phone"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$node[\"Webhook\"].json[\"headers\"][\"x-auth-secret\"]}}",
+              "rightValue": "={{$vars.CARGLASS_N8N_SHARED_SECRET}}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "11111111-1111-1111-1111-111111111102",
+      "name": "Auth Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\": false, \"error_code\": \"UNAUTHORIZED\", \"message_for_agent\": \"Authentifizierung fehlgeschlagen.\"}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "11111111-1111-1111-1111-111111111103",
+      "name": "Respond 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        640,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || {};\nconst raw = (body.spoken_phone || '').toString();\nconst defaultCC = ($vars.CARGLASS_DEFAULT_COUNTRY_CODE || '+49');\nlet digits = raw.replace(/[^0-9+]/g, '');\nif (digits.startsWith('00')) digits = '+' + digits.slice(2);\nif (digits.startsWith('0')) digits = defaultCC + digits.slice(1);\nif (!digits.startsWith('+')) digits = defaultCC + digits;\nconst phone_e164_url = encodeURIComponent(digits);\nreturn [{ json: { phone_e164: digits, phone_e164_url, conversation_id: body.conversation_id || null, raw } }];\n"
+      },
+      "id": "11111111-1111-1111-1111-111111111104",
+      "name": "Normalize Phone",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.CARGLASS_SUPABASE_URL}}/rest/v1/customers?phone_e164=eq.{{$json.phone_e164_url}}&select=id,first_name,last_name,phone_e164,language",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.CARGLASS_SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.CARGLASS_SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 8000
+        }
+      },
+      "id": "11111111-1111-1111-1111-111111111105",
+      "name": "Query Customer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        860,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.CARGLASS_SUPABASE_URL}}/rest/v1/appointments?customer_id=eq.{{ $('Query Customer').item.json.id || '00000000-0000-0000-0000-000000000000' }}&order=scheduled_start.desc&limit=3&select=booking_reference,status,scheduled_start,branch_id,branches(name)",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.CARGLASS_SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.CARGLASS_SUPABASE_SERVICE_ROLE_KEY}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 8000
+        }
+      },
+      "id": "11111111-1111-1111-1111-111111111106",
+      "name": "Query Recent Appointments",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1080,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const customerItem = $('Query Customer').first();\nconst customer = customerItem && customerItem.json && customerItem.json.id ? customerItem.json : null;\nconst found = customer !== null;\nconst apptItems = $('Query Recent Appointments').all() || [];\nconst recent_appointments = apptItems\n  .map(it => it.json)\n  .filter(a => a && a.booking_reference)\n  .map(a => ({\n    booking_reference: a.booking_reference,\n    status: a.status,\n    scheduled_start: a.scheduled_start,\n    branch_name: a.branches ? a.branches.name : null,\n  }));\nreturn [{ json: { ok: true, data: { found, customer, recent_appointments } } }];\n"
+      },
+      "id": "11111111-1111-1111-1111-111111111107",
+      "name": "Shape Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$vars.CARGLASS_SUPABASE_URL}}/rest/v1/integration_health",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{$vars.CARGLASS_SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$vars.CARGLASS_SUPABASE_SERVICE_ROLE_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"integration\": \"crm\",\n  \"endpoint\": \"/webhook/get-customer-by-phone\",\n  \"status_code\": 200,\n  \"latency_ms\": 0,\n  \"success\": true,\n  \"conversation_id\": null\n}",
+        "options": {
+          "timeout": 4000
+        }
+      },
+      "id": "11111111-1111-1111-1111-111111111108",
+      "name": "Log Integration Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1520,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($('Shape Response').first().json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "11111111-1111-1111-1111-111111111109",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1740,
+        220
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Auth Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check": {
+      "main": [
+        [
+          {
+            "node": "Normalize Phone",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Phone": {
+      "main": [
+        [
+          {
+            "node": "Query Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Customer": {
+      "main": [
+        [
+          {
+            "node": "Query Recent Appointments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Recent Appointments": {
+      "main": [
+        [
+          {
+            "node": "Shape Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Response": {
+      "main": [
+        [
+          {
+            "node": "Log Integration Health",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Integration Health": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "voicebot"
+    },
+    {
+      "name": "carglass"
+    }
+  ]
+}

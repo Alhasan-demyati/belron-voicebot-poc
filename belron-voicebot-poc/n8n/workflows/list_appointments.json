@@ -1,0 +1,154 @@
+{
+  "name": "voicebot - list_appointments",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "list-appointments",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "44444444-4444-4444-4444-444444444401",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ],
+      "webhookId": "list-appointments"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$node[\"Webhook\"].json[\"headers\"][\"x-auth-secret\"]}}",
+              "rightValue": "={{$vars.CARGLASS_N8N_SHARED_SECRET}}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "44444444-4444-4444-4444-444444444402",
+      "name": "Auth Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\": false, \"error_code\": \"UNAUTHORIZED\", \"message_for_agent\": \"Authentifizierung fehlgeschlagen.\"}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "44444444-4444-4444-4444-444444444403",
+      "name": "Respond 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        640,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const _h = this.helpers;\nconst fetch = async (url, init = {}) => {\n  const opts = { method: init.method || 'GET', url, headers: { ...(init.headers || {}) }, json: true, timeout: 10000, returnFullResponse: false };\n  if (opts.headers['Content-Type']) delete opts.headers['Content-Type'];\n  if (opts.headers['content-type']) delete opts.headers['content-type'];\n  if (init.body !== undefined) {\n    if (typeof init.body === 'string') { try { opts.body = JSON.parse(init.body); } catch { opts.body = init.body; } }\n    else opts.body = init.body;\n  }\n  try {\n    const data = await _h.httpRequest(opts);\n    return { ok: true, status: 200, json: async () => data, text: async () => (typeof data === 'string' ? data : JSON.stringify(data)) };\n  } catch (e) {\n    const status = (e && e.statusCode) || (e && e.response && e.response.statusCode) || (e && e.cause && e.cause.statusCode) || 500;\n    let errBody = (e && e.response && e.response.body) ?? (e && e.cause && e.cause.body) ?? null;\n    if (errBody && typeof errBody !== 'string') { try { errBody = JSON.stringify(errBody); } catch { errBody = String(errBody); } }\n    if (!errBody && e && e.message) errBody = e.message;\n    return { ok: false, status, json: async () => { try { return JSON.parse(errBody); } catch { return errBody; } }, text: async () => String(errBody) };\n  }\n};\n\nconst body = $input.first().json.body || {};\nif (!body.customer_id) return [{ json: { ok: false, error_code: 'MISSING_CUSTOMER', message_for_agent: 'Kein Kunde gefunden.' } }];\nconst headers = { apikey: $vars.CARGLASS_SUPABASE_SERVICE_ROLE_KEY, Authorization: 'Bearer ' + $vars.CARGLASS_SUPABASE_SERVICE_ROLE_KEY };\nconst url = `${$vars.CARGLASS_SUPABASE_URL}/rest/v1/appointments?customer_id=eq.${encodeURIComponent(body.customer_id)}&status=in.(scheduled,checked_in,in_progress,ready_for_pickup)&order=scheduled_start.asc&select=id,booking_reference,status,scheduled_start,scheduled_end,branch_id,branches(name,city),service_id,services(name_de)`;\nconst r = await fetch(url, { headers });\nif (!r.ok) return [{ json: { ok: false, error_code: 'SUPABASE_ERROR', message_for_agent: 'Bitte versuchen Sie es erneut.' } }];\nconst data = await r.json();\nreturn [{ json: { ok: true, data: { count: data.length, appointments: data.map(a => ({\n  id: a.id,\n  booking_reference: a.booking_reference,\n  status: a.status,\n  scheduled_start: a.scheduled_start,\n  scheduled_end: a.scheduled_end,\n  branch_id: a.branch_id,\n  branch_name: a.branches ? a.branches.name : null,\n  branch_city: a.branches ? a.branches.city : null,\n  service_id: a.service_id,\n  service_name: a.services ? a.services.name_de : null,\n})) } } }];\n"
+      },
+      "id": "44444444-4444-4444-4444-444444444404",
+      "name": "Fetch Appointments",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($('Fetch Appointments').first().json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "44444444-4444-4444-4444-444444444405",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        860,
+        220
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Auth Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check": {
+      "main": [
+        [
+          {
+            "node": "Fetch Appointments",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Appointments": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "voicebot"
+    },
+    {
+      "name": "carglass"
+    }
+  ]
+}

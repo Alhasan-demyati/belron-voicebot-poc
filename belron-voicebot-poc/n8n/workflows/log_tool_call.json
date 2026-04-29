@@ -1,0 +1,157 @@
+{
+  "name": "voicebot - log_tool_call",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "log-tool-call",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa01",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ],
+      "webhookId": "log-tool-call"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$node[\"Webhook\"].json[\"headers\"][\"x-auth-secret\"]}}",
+              "rightValue": "={{$vars.CARGLASS_N8N_SHARED_SECRET}}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa02",
+      "name": "Auth Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\": false, \"error_code\": \"UNAUTHORIZED\"}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa03",
+      "name": "Respond 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        640,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const _h = this.helpers;\nconst fetch = async (url, init = {}) => {\n  const opts = { method: init.method || 'GET', url, headers: { ...(init.headers || {}) }, json: true, timeout: 10000, returnFullResponse: false };\n  if (opts.headers['Content-Type']) delete opts.headers['Content-Type'];\n  if (opts.headers['content-type']) delete opts.headers['content-type'];\n  if (init.body !== undefined) {\n    if (typeof init.body === 'string') { try { opts.body = JSON.parse(init.body); } catch { opts.body = init.body; } }\n    else opts.body = init.body;\n  }\n  try {\n    const data = await _h.httpRequest(opts);\n    return { ok: true, status: 200, json: async () => data, text: async () => (typeof data === 'string' ? data : JSON.stringify(data)) };\n  } catch (e) {\n    const status = (e && e.statusCode) || (e && e.response && e.response.statusCode) || (e && e.cause && e.cause.statusCode) || 500;\n    let errBody = (e && e.response && e.response.body) ?? (e && e.cause && e.cause.body) ?? null;\n    if (errBody && typeof errBody !== 'string') { try { errBody = JSON.stringify(errBody); } catch { errBody = String(errBody); } }\n    if (!errBody && e && e.message) errBody = e.message;\n    return { ok: false, status, json: async () => { try { return JSON.parse(errBody); } catch { return errBody; } }, text: async () => String(errBody) };\n  }\n};\n\nconst _SUPABASE_URL = $vars.CARGLASS_SUPABASE_URL;\nconst _SUPABASE_KEY = $vars.CARGLASS_SUPABASE_SERVICE_ROLE_KEY;\nconst _SB_HEADERS = { apikey: _SUPABASE_KEY, Authorization: 'Bearer ' + _SUPABASE_KEY };\nasync function resolveConvId(input) {\n  if (!input) return null;\n  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(input))) return input;\n  try {\n    const r1 = await fetch(`${_SUPABASE_URL}/rest/v1/calls?external_call_id=eq.${encodeURIComponent(input)}&select=id&limit=1`, { headers: _SB_HEADERS });\n    if (!r1.ok) return null;\n    const calls = await r1.json();\n    if (!calls.length) return null;\n    const r2 = await fetch(`${_SUPABASE_URL}/rest/v1/conversations?call_id=eq.${calls[0].id}&select=id&limit=1`, { headers: _SB_HEADERS });\n    if (!r2.ok) return null;\n    const cv = await r2.json();\n    return cv.length ? cv[0].id : null;\n  } catch (e) { return null; }\n}\n\nconst body = $input.first().json.body || {};\nbody.conversation_id = await resolveConvId(body.conversation_id);\nif (!body.conversation_id) return [{ json: { ok: false, error_code: 'CONVERSATION_NOT_FOUND' } }];\nconst sb = $vars.CARGLASS_SUPABASE_URL;\nconst headers = {\n  apikey: $vars.CARGLASS_SUPABASE_SERVICE_ROLE_KEY,\n  Authorization: 'Bearer ' + $vars.CARGLASS_SUPABASE_SERVICE_ROLE_KEY,\n  'Prefer': 'resolution=merge-duplicates,return=minimal',\n};\nif (body.event === 'tool_called') {\n  const r = await fetch(`${sb}/rest/v1/tool_calls`, {\n    method: 'POST', headers,\n    body: {\n      id: body.tool_call_id || undefined,\n      conversation_id: body.conversation_id,\n      tool_name: body.tool_name,\n      request_payload: body.request_payload || null,\n      status: 'success',\n    },\n  });\n  if (!r.ok) return [{ json: { ok: false, error_code: 'INSERT_FAILED', details: await r.text() } }];\n  return [{ json: { ok: true } }];\n}\nif (body.event === 'tool_result') {\n  const status = body.error_message ? 'error' : (body.status || 'success');\n  if (body.tool_call_id) {\n    const r = await fetch(`${sb}/rest/v1/tool_calls?id=eq.${body.tool_call_id}`, {\n      method: 'PATCH', headers,\n      body: {\n        response_payload: body.response_payload || null,\n        status, latency_ms: body.latency_ms || null,\n        error_message: body.error_message || null,\n      },\n    });\n    if (!r.ok) return [{ json: { ok: false, error_code: 'PATCH_FAILED', details: await r.text() } }];\n  }\n  await fetch(`${sb}/rest/v1/integration_health`, {\n    method: 'POST', headers,\n    body: {\n      integration: 'n8n',\n      endpoint: '/webhook/' + (body.tool_name || 'unknown'),\n      status_code: status === 'success' ? 200 : 500,\n      latency_ms: body.latency_ms || 0,\n      success: status === 'success',\n      conversation_id: body.conversation_id || null,\n      error_message: body.error_message || null,\n    },\n  });\n  return [{ json: { ok: true } }];\n}\nreturn [{ json: { ok: false, error_code: 'UNKNOWN_EVENT' } }];\n"
+      },
+      "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa04",
+      "name": "Persist Tool Call",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($('Persist Tool Call').first().json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa05",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        860,
+        220
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Auth Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check": {
+      "main": [
+        [
+          {
+            "node": "Persist Tool Call",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Persist Tool Call": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "voicebot"
+    },
+    {
+      "name": "carglass"
+    },
+    {
+      "name": "telemetry"
+    }
+  ]
+}

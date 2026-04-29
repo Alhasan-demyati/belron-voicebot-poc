@@ -1,0 +1,178 @@
+{
+  "name": "voicebot - find_customer",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "find-customer",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "22222222-2222-2222-2222-222222222201",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ],
+      "webhookId": "find-customer"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$node[\"Webhook\"].json[\"headers\"][\"x-auth-secret\"]}}",
+              "rightValue": "={{$vars.CARGLASS_N8N_SHARED_SECRET}}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "22222222-2222-2222-2222-222222222202",
+      "name": "Auth Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        420,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\": false, \"error_code\": \"UNAUTHORIZED\", \"message_for_agent\": \"Authentifizierung fehlgeschlagen.\"}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "22222222-2222-2222-2222-222222222203",
+      "name": "Respond 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        640,
+        460
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || {};\nconst { license_plate, booking_ref, name, postal_code, conversation_id } = body;\nconst hasLP = !!license_plate;\nconst hasBR = !!booking_ref;\nconst hasNP = name && postal_code;\nif (!hasLP && !hasBR && !hasNP) {\n  return [{ json: { __error: true, message: 'missing_identifier' } }];\n}\nreturn [{ json: {\n  license_plate: license_plate ? license_plate.toUpperCase().replace(/\\s+/g, '') : null,\n  booking_ref:  booking_ref || null,\n  name:         name || null,\n  postal_code:  postal_code || null,\n  conversation_id: conversation_id || null,\n} }];\n"
+      },
+      "id": "22222222-2222-2222-2222-222222222204",
+      "name": "Normalize Inputs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const _h = this.helpers;\nconst fetch = async (url, init = {}) => {\n  const opts = { method: init.method || 'GET', url, headers: { ...(init.headers || {}) }, json: true, timeout: 10000, returnFullResponse: false };\n  if (opts.headers['Content-Type']) delete opts.headers['Content-Type'];\n  if (opts.headers['content-type']) delete opts.headers['content-type'];\n  if (init.body !== undefined) {\n    if (typeof init.body === 'string') { try { opts.body = JSON.parse(init.body); } catch { opts.body = init.body; } }\n    else opts.body = init.body;\n  }\n  try {\n    const data = await _h.httpRequest(opts);\n    return { ok: true, status: 200, json: async () => data, text: async () => (typeof data === 'string' ? data : JSON.stringify(data)) };\n  } catch (e) {\n    const status = (e && e.statusCode) || (e && e.response && e.response.statusCode) || (e && e.cause && e.cause.statusCode) || 500;\n    let errBody = (e && e.response && e.response.body) ?? (e && e.cause && e.cause.body) ?? null;\n    if (errBody && typeof errBody !== 'string') { try { errBody = JSON.stringify(errBody); } catch { errBody = String(errBody); } }\n    if (!errBody && e && e.message) errBody = e.message;\n    return { ok: false, status, json: async () => { try { return JSON.parse(errBody); } catch { return errBody; } }, text: async () => String(errBody) };\n  }\n};\n\nconst i = $input.first().json;\nconst sb = $vars.CARGLASS_SUPABASE_URL;\nconst headers = { apikey: $vars.CARGLASS_SUPABASE_SERVICE_ROLE_KEY, Authorization: 'Bearer ' + $vars.CARGLASS_SUPABASE_SERVICE_ROLE_KEY };\nasync function fetchJson(url) {\n  const r = await fetch(url, { headers });\n  if (!r.ok) return [];\n  return await r.json();\n}\nlet customerId = null;\nif (i.license_plate) {\n  const v = await fetchJson(`${sb}/rest/v1/vehicles?license_plate=ilike.*${encodeURIComponent(i.license_plate)}*&select=customer_id&limit=1`);\n  if (v.length) customerId = v[0].customer_id;\n}\nif (!customerId && i.booking_ref) {\n  const a = await fetchJson(`${sb}/rest/v1/appointments?booking_reference=eq.${encodeURIComponent(i.booking_ref)}&select=customer_id&limit=1`);\n  if (a.length) customerId = a[0].customer_id;\n}\nif (!customerId && i.name && i.postal_code) {\n  const parts = i.name.trim().split(/\\s+/);\n  const last = parts[parts.length - 1];\n  const c = await fetchJson(`${sb}/rest/v1/customers?last_name=ilike.*${encodeURIComponent(last)}*&postal_code=eq.${encodeURIComponent(i.postal_code)}&select=id&limit=1`);\n  if (c.length) customerId = c[0].id;\n}\nif (!customerId) {\n  return [{ json: { ok: true, data: { found: false, customer: null, recent_appointments: [] } } }];\n}\nconst cust = await fetchJson(`${sb}/rest/v1/customers?id=eq.${customerId}&select=id,first_name,last_name,phone_e164,language`);\nconst appts = await fetchJson(`${sb}/rest/v1/appointments?customer_id=eq.${customerId}&order=scheduled_start.desc&limit=3&select=booking_reference,status,scheduled_start,branches(name)`);\nreturn [{ json: { ok: true, data: {\n  found: true,\n  customer: cust[0] || null,\n  recent_appointments: (appts || []).map(a => ({\n    booking_reference: a.booking_reference,\n    status: a.status,\n    scheduled_start: a.scheduled_start,\n    branch_name: a.branches ? a.branches.name : null,\n  })),\n} } }];\n"
+      },
+      "id": "22222222-2222-2222-2222-222222222205",
+      "name": "Find Customer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($('Find Customer').first().json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "22222222-2222-2222-2222-222222222206",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1080,
+        220
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Auth Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth Check": {
+      "main": [
+        [
+          {
+            "node": "Normalize Inputs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Inputs": {
+      "main": [
+        [
+          {
+            "node": "Find Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Customer": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "voicebot"
+    },
+    {
+      "name": "carglass"
+    }
+  ]
+}
